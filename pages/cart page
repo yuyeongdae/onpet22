@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>장바구니 - 온마루펫</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="container">
+      <a href="index.html" class="logo">온마루펫</a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">홈</a></li>
+          <li><a href="product-detail.html">제품상세</a></li>
+          <li><a href="cart.html">장바구니</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="container">
+      <h2>🛒 내 장바구니</h2>
+      <div id="cart-container"></div>
+
+      <div style="margin-top: 30px;">
+        <h3>📦 정기구독 옵션</h3>
+        <label><input type="radio" name="subscription" value="none" checked> 일회성 구매</label><br>
+        <label><input type="radio" name="subscription" value="monthly"> 매월 자동 배송 (정기구독)</label>
+      </div>
+      <button id="checkout-button" class="btn">💳 결제하기</button>
+    </div>
+      </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>💳 결제 내역</h2>
+        <div id="payment-history">
+          <p>최근 결제 내역이 없습니다.</p>
+        </div>
+        <div style="margin-top: 30px;">
+          <h3>🛑 정기구독 취소</h3>
+          <button class="btn" onclick="cancelSubscription()">정기구독 해지하기</button>
+        </div>
+      </div>
+    </section>
+
+<section class="section">
+  <div class="container">
+    <h2>📋 관리자 구독 현황</h2>
+    <table border="1" cellpadding="8" style="width:100%; text-align:left;">
+      <thead>
+        <tr>
+          <th>회원ID</th>
+          <th>상품명</th>
+          <th>수량</th>
+          <th>구독 상태</th>
+          <th>Stripe 구독 ID</th>
+          <th>관리</th>
+        </tr>
+      </thead>
+      <tbody id="admin-subscription-table">
+        <!-- Stripe 실시간 구독 상태 연동 -->
+      </tbody>
+      <script>
+        fetch('/get-subscription-status.php')
+          .then(res => res.json())
+          .then(data => {
+            const table = document.getElementById('admin-subscription-table');
+            if (Array.isArray(data)) {
+              table.innerHTML = data.map(sub => `
+                <tr>
+                  <td>${sub.user_id}</td>
+                  <td>${sub.product}</td>
+                  <td>${sub.quantity}</td>
+                  <td>${sub.status}</td>
+                  <td>${sub.stripe_subscription_id}</td>
+                  <td>
+                    ${sub.status === 'active'
+                      ? `<button class="btn" onclick="cancelSub('${sub.stripe_subscription_id}')">해지</button>`
+                      : '<span style="color:#999">해지 완료</span>'}
+                  </td>
+                </tr>`).join('');
+            } else {
+              table.innerHTML = '<tr><td colspan="6">구독 내역이 없습니다.</td></tr>';
+            }
+          });
+
+        function cancelSub(subscriptionId) {
+          fetch('/cancel-subscription.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: subscriptionId })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              alert('구독이 취소되었습니다.');
+              location.reload();
+            } else {
+              alert('취소 실패: ' + data.error);
+            }
+          });
+        }
+      </script>
+    </table>
+  </div>
+</section>
+
+<script>
+    const cartContainer = document.getElementById('cart-container');
+    const checkoutBtn = document.getElementById('checkout-button');
+    const cart = JSON.parse(localStorage.getItem('cart')) || [];
+
+    function renderCart() {
+      if (cart.length === 0) {
+        cartContainer.innerHTML = '<p>장바구니가 비어있습니다.</p>';
+        checkoutBtn.style.display = 'none';
+        return;
+      }
+      let html = '<table><thead><tr><th>상품명</th><th>수량</th><th>가격</th><th>삭제</th></tr></thead><tbody>';
+      let total = 0;
+      cart.forEach((item, index) => {
+        const price = item.name.includes('트릿') ? 10000 : item.name.includes('스틱') ? 12000 : 14000;
+        total += price * item.quantity;
+        html += `<tr>
+          <td>${item.name}</td>
+          <td>${item.quantity}</td>
+          <td>${(price * item.quantity).toLocaleString()}원</td>
+          <td><button onclick="removeItem(${index})">❌</button></td>
+        </tr>`;
+      });
+      html += `</tbody></table><p style='text-align:right; font-size:1.1rem; margin-top:10px;'>총합계: <strong>${total.toLocaleString()}원</strong></p>`;
+      cartContainer.innerHTML = html;
+    }
+
+    function removeItem(index) {
+      cart.splice(index, 1);
+      localStorage.setItem('cart', JSON.stringify(cart));
+      renderCart();
+    }
+
+    checkoutBtn.addEventListener('click', () => {
+      const isSubscribed = document.querySelector('input[name="subscription"]:checked')?.value === 'monthly';
+      if (isSubscribed) {
+        alert('정기구독 결제로 이동합니다. (Stripe 연동 예정)');
+        fetch('/create-subscription-session.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cart })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.id) {
+            location.href = `https://checkout.stripe.com/pay/${data.id}`;
+          } else {
+            alert('정기결제 세션 생성 실패');
+          }
+        });
+      } else {
+        alert('일회성 결제 페이지로 이동합니다.');
+        fetch('/create-checkout-session.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cart })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.id) {
+            location.href = `https://checkout.stripe.com/pay/${data.id}`;
+          } else {
+            alert('일반 결제 세션 생성 실패');
+          }
+        });
+      }
+      // 실제 Stripe 결제 API 호출 코드 삽입 가능
+    });
+
+    renderCart();
+  function cancelSubscription() {
+  fetch('/cancel-subscription.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert('정기구독이 성공적으로 취소되었습니다.');
+    } else {
+      alert('구독 취소에 실패했습니다.');
+    }
+  });
+}
+
+// 추후 결제 내역 불러오기 연동 가능
+
+</body>
+</html>
